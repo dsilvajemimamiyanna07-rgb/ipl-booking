@@ -1,0 +1,13 @@
+:root {
+  color: #0f172a;
+  background-color: #eef2f6;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: #0f172a;
+  background-color: #eef2f6;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
