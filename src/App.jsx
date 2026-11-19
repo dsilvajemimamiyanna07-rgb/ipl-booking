@@ -8,8 +8,10 @@ import "./App.css";
 
 function App() {
   const [matches, setMatches] = useState([]);
+  const [bookings, setBookings] = useState([]);
   const [selectedMatchId, setSelectedMatchId] = useState(null);
   const [totalBookings, setTotalBookings] = useState(0);
+  const [activeView, setActiveView] = useState("booking");
   const [loading, setLoading] = useState(true);
 
   async function fetchMatches() {
@@ -31,10 +33,11 @@ function App() {
     setLoading(false);
   }
 
-  async function fetchTotalBookings() {
+  async function fetchBookings() {
     const { data, error } = await supabase
       .from("bookings")
-      .select("seats_booked, tickets");
+      .select("*")
+      .order("id", { ascending: false });
 
     if (error) {
       console.error("Error fetching bookings:", error.message);
@@ -42,6 +45,7 @@ function App() {
     }
 
     if (data) {
+      setBookings(data);
       const sum = data.reduce(
         (acc, row) => acc + (row.seats_booked ?? row.tickets ?? 0),
         0
@@ -52,7 +56,7 @@ function App() {
 
   useEffect(() => {
     fetchMatches();
-    fetchTotalBookings();
+    fetchBookings();
 
     const channel = supabase
       .channel("matches-realtime")
@@ -110,11 +114,15 @@ function App() {
 
     setTotalBookings((prev) => prev + bookedSeats);
     fetchMatches();
+    fetchBookings();
   }
 
   return (
     <div>
-      <Navbar totalBookings={totalBookings} />
+      <Navbar
+        totalBookings={totalBookings}
+        onNavigate={(view) => setActiveView(view)}
+      />
 
       <header className="hero">
         <div className="hero-badge-box" aria-hidden="true">
@@ -137,25 +145,54 @@ function App() {
       </header>
 
       <main className="matches-section">
-        <h2>Upcoming Matches</h2>
-        {loading ? (
-          <p>Loading matches from Supabase...</p>
-        ) : (
-          <div className="matches-grid">
-            {matches.map((match) => (
-              <MatchCard
-                key={match.id}
-                match={match}
-                onSelectMatch={(clickedMatch) => setSelectedMatchId(clickedMatch.id)}
-              />
-            ))}
-          </div>
-        )}
+        {activeView === "history" ? (
+          <section className="booking-history-section">
+            <h2>Booking History</h2>
+            {bookings.length === 0 ? (
+              <p>No bookings found yet.</p>
+            ) : (
+              <div className="history-list">
+                {bookings.map((item, idx) => {
+                  const name = item.customer_name || item.user_name || "Guest";
+                  const seats = item.seats_booked ?? item.tickets ?? 1;
+                  const matchName = item.match_title || `Match #${item.match_id}`;
+                  const amount = item.total_price ?? 0;
 
-        <BookingForm
-          selectedMatch={selectedMatch}
-          onConfirmBooking={handleConfirmBooking}
-        />
+                  return (
+                    <div key={item.id ?? idx} className="history-card">
+                      <h3>{matchName}</h3>
+                      <p><strong>Booked By:</strong> {name}</p>
+                      <p><strong>Seats:</strong> {seats}</p>
+                      <p><strong>Total Price:</strong> ₹{amount}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        ) : (
+          <>
+            <h2>Upcoming Matches</h2>
+            {loading ? (
+              <p>Loading matches from Supabase...</p>
+            ) : (
+              <div className="matches-grid">
+                {matches.map((match) => (
+                  <MatchCard
+                    key={match.id}
+                    match={match}
+                    onSelectMatch={(clickedMatch) => setSelectedMatchId(clickedMatch.id)}
+                  />
+                ))}
+              </div>
+            )}
+
+            <BookingForm
+              selectedMatch={selectedMatch}
+              onConfirmBooking={handleConfirmBooking}
+            />
+          </>
+        )}
       </main>
 
       <Footer />
