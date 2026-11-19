@@ -1,56 +1,115 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "./supabase";
 import { Navbar } from "./components/Navbar";
 import { MatchCard } from "./components/MatchCard";
 import { BookingForm } from "./components/BookingForm";
 import { Footer } from "./components/Footer";
 import "./App.css";
 
-const INITIAL_MATCHES = [
-  {
-    id: 1,
-    team1: "RCB",
-    team2: "CSK",
-    date: "Apr 12, 2026",
-    venue: "M. Chinnaswamy Stadium",
-    price: 1500,
-    availableSeats: 25,
-  },
-  {
-    id: 2,
-    team1: "MI",
-    team2: "KKR",
-    date: "Apr 15, 2026",
-    venue: "Wankhede Stadium",
-    price: 1200,
-    availableSeats: 15,
-  },
-  {
-    id: 3,
-    team1: "DC",
-    team2: "RR",
-    date: "Apr 18, 2026",
-    venue: "Arun Jaitley Stadium",
-    price: 1000,
-    availableSeats: 0,
-  },
-];
-
 function App() {
-  const [matches, setMatches] = useState(INITIAL_MATCHES);
+  const [matches, setMatches] = useState([]);
   const [selectedMatchId, setSelectedMatchId] = useState(null);
   const [totalBookings, setTotalBookings] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  async function fetchMatches() {
+    const { data, error } = await supabase
+      .from("matches")
+      .select("*")
+      .order("id", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching matches:", error.message);
+    } else if (data) {
+      setMatches(
+        data.map((row) => ({
+          ...row,
+          availableSeats: row.available_seats,
+        }))
+      );
+    }
+    setLoading(false);
+  }
+
+  async function fetchTotalBookings() {
+    const { data, error } = await supabase
+      .from("bookings")
+      .select("seats_booked, tickets");
+
+    if (error) {
+      console.error("Error fetching bookings:", error.message);
+      return;
+    }
+
+    if (data) {
+      const sum = data.reduce(
+        (acc, row) => acc + (row.seats_booked ?? row.tickets ?? 0),
+        0
+      );
+      setTotalBookings(sum);
+    }
+  }
+
+  useEffect(() => {
+    fetchMatches();
+    fetchTotalBookings();
+
+    const channel = supabase
+      .channel("matches-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => {
+          fetchMatches();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const selectedMatch = matches.find((m) => m.id === selectedMatchId) || null;
 
-  function handleConfirmBooking(matchId, bookedSeats) {
-    setMatches((prevMatches) =>
-      prevMatches.map((m) =>
-        m.id === matchId
-          ? { ...m, availableSeats: Math.max(0, m.availableSeats - bookedSeats) }
-          : m
-      )
-    );
+  async function handleConfirmBooking(matchId, bookedSeats, customerName = "Guest") {
+    const targetMatch = matches.find((m) => m.id === matchId);
+    if (!targetMatch) return;
+
+    const newSeats = Math.max(0, targetMatch.availableSeats - bookedSeats);
+    const matchTitle = targetMatch.title || targetMatch.name || "IPL Match";
+    const seatPrice = Number(targetMatch.price) || 0;
+    const totalPrice = bookedSeats * seatPrice;
+
+    const { error: bookingError } = await supabase.from("bookings").insert([
+      {
+        match_id: matchId,
+        match_title: matchTitle,
+        user_name: customerName,
+        customer_name: customerName,
+        seats_booked: bookedSeats,
+        tickets: bookedSeats,
+        total_price: totalPrice,
+      },
+    ]);
+
+    if (bookingError) {
+      console.error("Booking insert error:", bookingError.message);
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from("matches")
+      .update({ available_seats: newSeats })
+      .eq("id", matchId);
+
+    if (updateError) {
+      console.error("Seats update error:", updateError.message);
+      return;
+    }
+
     setTotalBookings((prev) => prev + bookedSeats);
+    fetchMatches();
   }
 
   return (
@@ -79,15 +138,19 @@ function App() {
 
       <main className="matches-section">
         <h2>Upcoming Matches</h2>
-        <div className="matches-grid">
-          {matches.map((match) => (
-            <MatchCard
-              key={match.id}
-              match={match}
-              onSelectMatch={(clickedMatch) => setSelectedMatchId(clickedMatch.id)}
-            />
-          ))}
-        </div>
+        {loading ? (
+          <p>Loading matches from Supabase...</p>
+        ) : (
+          <div className="matches-grid">
+            {matches.map((match) => (
+              <MatchCard
+                key={match.id}
+                match={match}
+                onSelectMatch={(clickedMatch) => setSelectedMatchId(clickedMatch.id)}
+              />
+            ))}
+          </div>
+        )}
 
         <BookingForm
           selectedMatch={selectedMatch}

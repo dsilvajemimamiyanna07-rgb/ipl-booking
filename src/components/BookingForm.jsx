@@ -11,28 +11,42 @@ export function BookingForm({ selectedMatch, onConfirmBooking }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (seats < 1 || seats > selectedMatch.availableSeats) {
+    const count = Number(seats);
+
+    if (!name.trim()) {
+      setMessage("Please enter your name.");
+      return;
+    }
+
+    if (count < 1 || count > selectedMatch.availableSeats) {
       setMessage(`Enter between 1 and ${selectedMatch.availableSeats} seats.`);
       return;
     }
-    onConfirmBooking(selectedMatch.id, seats);
-    setMessage(`Booked ${seats} seat(s) for ${selectedMatch.team1} vs ${selectedMatch.team2} (${name}).`);
+
+    onConfirmBooking(selectedMatch.id, count, name.trim());
+    setMessage(
+      `Booked ${count} seat(s) for ${selectedMatch.team1} vs ${selectedMatch.team2} (${name.trim()}).`
+    );
     setName("");
     setSeats(1);
   }
 
   return (
     <form className="booking-form" onSubmit={handleSubmit}>
-      <h3>Book: {selectedMatch.team1} vs {selectedMatch.team2}</h3>
+      <h3>
+        Book: {selectedMatch.team1} vs {selectedMatch.team2}
+      </h3>
+
       <label>
         Name:
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          required
+          placeholder="Enter your name"
         />
       </label>
+
       <label>
         Seats (Max {selectedMatch.availableSeats}):
         <input
@@ -40,10 +54,14 @@ export function BookingForm({ selectedMatch, onConfirmBooking }) {
           min="1"
           max={selectedMatch.availableSeats}
           value={seats}
-          onChange={(e) => setSeats(Number(e.target.value))}
+          onChange={(e) => setSeats(e.target.value)}
         />
       </label>
-      <button type="submit">Confirm Booking</button>
+
+      <button type="submit" disabled={selectedMatch.availableSeats === 0}>
+        Confirm Booking
+      </button>
+
       {message && <p>{message}</p>}
     </form>
   );
